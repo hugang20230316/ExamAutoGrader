@@ -1,0 +1,275 @@
+﻿services:
+  # API服务
+  examautograder-api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8080:8080"
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Production
+      - ConnectionStrings__DefaultConnection=Server=mysql;Database=examgrader;Uid=root;Pwd=password;
+      - AIProviders__Doubao__ApiKey=${DOUBAO_API_KEY}
+      - AIProviders__DeepSeek__ApiKey=${DEEPSEEK_API_KEY}
+      - AIProviders__ChatGPT__ApiKey=${CHATGPT_API_KEY}
+      - OCR__Baidu__ApiKey=${BAIDU_OCR_API_KEY}
+      - OCR__Baidu__SecretKey=${BAIDU_OCR_SECRET_KEY}
+    depends_on:
+      - examautograder-mysql
+      - kafka1
+      - kafka2
+      - kafka3
+    volumes:
+      - uploads:/app/wwwroot/uploads
+      - logs:/app/logs
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - examgrader-network
+
+  # MySQL数据库
+  examautograder-mysql:
+    image: mysql:8.0
+    container_name: examautograder-mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: 123456
+      MYSQL_DATABASE: examgrader
+      MYSQL_USER: appuser
+      MYSQL_PASSWORD: 123456
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./scripts/init.sql:/docker-entrypoint-initdb.d/init.sql
+    command: 
+      - --default-authentication-plugin=mysql_native_password
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+    restart: unless-stopped
+    networks:
+      - examgrader-network
+
+# ==============================================================
+  # 🧱 Kafka 集群节点 1
+  # ==============================================================
+  kafka1:
+    image: confluentinc/cp-kafka:latest
+    hostname: kafka1
+    container_name: kafka1
+    ports:
+      - "9092:9092"    # 外部访问 Kafka1
+      - "9192:9192"  # ✅ 暴露 JMX Exporter 端口
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: "broker,controller"
+      KAFKA_CONTROLLER_QUORUM_VOTERS: "1@kafka1:9093,2@kafka2:9093,3@kafka3:9093"
+      KAFKA_LISTENERS: "CLIENT://0.0.0.0:9092,INTERNAL://0.0.0.0:9094,CONTROLLER://0.0.0.0:9093"
+      KAFKA_ADVERTISED_LISTENERS: "CLIENT://localhost:9092,INTERNAL://kafka1:9094,CONTROLLER://kafka1:9093"
+      # ✅ 必须为每个 listener 定义安全协议
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: "CLIENT:PLAINTEXT,INTERNAL:PLAINTEXT,CONTROLLER:PLAINTEXT"
+      KAFKA_INTER_BROKER_LISTENER_NAME: "INTERNAL"
+      KAFKA_CONTROLLER_LISTENER_NAMES: "CONTROLLER"
+      CLUSTER_ID: "4L6g3k4aRvqy2X6r1jZ3fQ"
+      KAFKA_LOG_DIRS: "/var/lib/kafka/data"
+      KAFKA_DELETE_TOPIC_ENABLE: "true"
+      # 开启 JMX 监控接口（JMX Exporter 会通过此端口采集指标）
+      KAFKA_JMX_PORT: 9192
+      KAFKA_JMX_HOSTNAME: kafka1
+    volumes:
+      - ./kafka/storage/node1:/var/lib/kafka/data
+    networks:
+      - kafka-net
+    restart: unless-stopped
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    healthcheck:
+      test: ["CMD-SHELL", "kafka-topics --bootstrap-server localhost:9092 --list >/dev/null 2>&1"]
+      interval: 3s      # 每 3 秒检测一次
+      timeout: 3s
+      retries: 2        # 连续 2 次成功即可
+      start_period: 5s  # 最多延迟 5 秒开始检测
+
+  # ==============================================================
+  # 🧱 Kafka 集群节点 2
+  # ==============================================================
+  kafka2:
+    image: confluentinc/cp-kafka:latest
+    hostname: kafka2
+    container_name: kafka2
+    ports:
+      - "9095:9092"
+      - "9195:9195"  # ✅ 暴露 JMX Exporter 端口
+    environment:
+      KAFKA_NODE_ID: 2
+      KAFKA_PROCESS_ROLES: "broker,controller"
+      KAFKA_CONTROLLER_QUORUM_VOTERS: "1@kafka1:9093,2@kafka2:9093,3@kafka3:9093"
+      KAFKA_LISTENERS: "CLIENT://0.0.0.0:9092,INTERNAL://0.0.0.0:9094,CONTROLLER://0.0.0.0:9093"
+      KAFKA_ADVERTISED_LISTENERS: "CLIENT://localhost:9095,INTERNAL://kafka2:9094,CONTROLLER://kafka2:9093"
+      # ✅ 必须为每个 listener 定义安全协议
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: "CLIENT:PLAINTEXT,INTERNAL:PLAINTEXT,CONTROLLER:PLAINTEXT"
+      KAFKA_INTER_BROKER_LISTENER_NAME: "INTERNAL"
+      KAFKA_CONTROLLER_LISTENER_NAMES: "CONTROLLER"
+      CLUSTER_ID: "4L6g3k4aRvqy2X6r1jZ3fQ"
+      KAFKA_LOG_DIRS: "/var/lib/kafka/data"
+      KAFKA_DELETE_TOPIC_ENABLE: "true"
+      KAFKA_JMX_PORT: 9195
+      KAFKA_JMX_HOSTNAME: kafka2
+    volumes:
+      - ./kafka/storage/node2:/var/lib/kafka/data
+    networks:
+      - kafka-net
+    restart: unless-stopped
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  # ==============================================================
+  # 🧱 Kafka 集群节点 3
+  # ==============================================================
+  kafka3:
+    image: confluentinc/cp-kafka:latest
+    hostname: kafka3
+    container_name: kafka3
+    ports:
+      - "9098:9092"
+      - "9198:9198"  # ✅ 暴露 JMX Exporter 端口
+    environment:
+      KAFKA_NODE_ID: 3
+      KAFKA_PROCESS_ROLES: "broker,controller"
+      KAFKA_CONTROLLER_QUORUM_VOTERS: "1@kafka1:9093,2@kafka2:9093,3@kafka3:9093"
+      KAFKA_LISTENERS: "CLIENT://0.0.0.0:9092,INTERNAL://0.0.0.0:9094,CONTROLLER://0.0.0.0:9093"
+      KAFKA_ADVERTISED_LISTENERS: "CLIENT://localhost:9098,INTERNAL://kafka3:9094,CONTROLLER://kafka3:9093"
+      # ✅ 必须为每个 listener 定义安全协议
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: "CLIENT:PLAINTEXT,INTERNAL:PLAINTEXT,CONTROLLER:PLAINTEXT"
+      KAFKA_INTER_BROKER_LISTENER_NAME: "INTERNAL"
+      KAFKA_CONTROLLER_LISTENER_NAMES: "CONTROLLER"
+      CLUSTER_ID: "4L6g3k4aRvqy2X6r1jZ3fQ"
+      KAFKA_LOG_DIRS: "/var/lib/kafka/data"
+      KAFKA_DELETE_TOPIC_ENABLE: "true"
+      KAFKA_JMX_PORT: 9198
+      KAFKA_JMX_HOSTNAME: kafka3
+    volumes:
+      - ./kafka/storage/node3:/var/lib/kafka/data
+    networks:
+      - kafka-net
+    restart: unless-stopped
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  # ==============================================================
+  # 📊 Kafka JMX Exporter (监控采集器)
+  # 每个 Kafka 都有一个 exporter 实例，用来导出 Kafka JMX 指标
+  # ==============================================================
+  kafka1-exporter:
+    image: danielqsj/kafka-exporter
+    container_name: kafka1-exporter
+    ports:
+      - "9101:9308"
+    command:
+      - --kafka.server=kafka1:9094
+      - --log.level=info
+    environment:
+      TZ: Asia/Shanghai
+    networks:
+      - kafka-net
+    depends_on:
+      - kafka1
+    restart: unless-stopped
+
+  kafka2-exporter:
+    image: danielqsj/kafka-exporter
+    container_name: kafka2-exporter
+    ports:
+      - "9102:9308"
+    command:
+      - --kafka.server=kafka2:9094
+      - --log.level=info
+    environment:
+      TZ: Asia/Shanghai
+    networks:
+      - kafka-net
+    depends_on:
+      - kafka2
+    restart: unless-stopped
+
+  kafka3-exporter:
+    image: danielqsj/kafka-exporter
+    container_name: kafka3-exporter
+    ports:
+      - "9103:9308"
+    command:
+      - --kafka.server=kafka3:9094
+      - --log.level=info
+    environment:
+      TZ: Asia/Shanghai
+    networks:
+      - kafka-net
+    depends_on:
+      - kafka3
+    restart: unless-stopped
+
+  # ==============================================================
+  # 📈 Prometheus —— 监控中心
+  # ==============================================================
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+    depends_on:
+      - kafka1-exporter
+      - kafka2-exporter
+      - kafka3-exporter
+    networks:
+      - kafka-net
+
+  # ==============================================================
+  # 📉 Grafana —— 可视化仪表盘
+  # ==============================================================
+  grafana:
+    image: grafana/grafana:latest
+    container_name: grafana
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=123456
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_FEATURE_TOGGLES_ENABLE=libraryPanels   # 👈 启用 Library Panels 功能
+    volumes:
+      - grafana_storage:/var/lib/grafana
+    depends_on:
+      - prometheus
+    networks:
+      - kafka-net
+      
+  examautograder-redis:
+    image: redis:latest
+    container_name: examautograder-redis
+    ports:
+      - "6380:6379"
+    command: redis-server --save "" --appendonly no
+    
+  
+# ==============================================================
+# 🌐 网络定义
+# ==============================================================
+networks:
+  kafka-net:
+    driver: bridge
+  examgrader-network:
+    driver: bridge
+# ==============================================================
+# 💾 持久化卷
+# ==============================================================
+volumes:
+  prometheus_data:
+  grafana_storage:
+  mysql_data:
+  uploads: 
+  logs:

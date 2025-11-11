@@ -1,0 +1,71 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.14.36429.23
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "src", "src", "{02EA681E-C7D8-13C7-8484-4AC65E1B71E8}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ExamAutoGrader.Api", "ExamAutoGrader.Api\ExamAutoGrader.Api.csproj", "{8A5282E6-4986-4CF0-8331-02CCD1728F77}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ExamAutoGrader.Domain", "ExamAutoGrader.Domain\ExamAutoGrader.Domain.csproj", "{51EEB09F-F3ED-4022-BEC9-1BF06568B0C7}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ExamAutoGrader.Application", "ExamAutoGrader.Application\ExamAutoGrader.Application.csproj", "{3A6F6C85-13AC-469C-AC94-9D97AB941CE0}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ExamAutoGrader.Infrastructure", "ExamAutoGrader.Infrastructure\ExamAutoGrader.Infrastructure.csproj", "{DDF7EAD4-AFB3-426D-B76A-97AF0BEFB899}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ExamAutoGrader.Shared", "ExamAutoGrader.Shared\ExamAutoGrader.Shared.csproj", "{3B43A9E6-EB2C-4ACF-9BCE-630864E2A370}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "解决方案项", "解决方案项", "{9FA3D6BD-1EC1-3BA5-80CB-CE02773A58D5}"
+	ProjectSection(SolutionItems) = preProject
+		.dockerignore = .dockerignore
+		docker-compose.yml = docker-compose.yml
+		ExamAutoGrader.Api\Dockerfile = ExamAutoGrader.Api\Dockerfile
+	EndProjectSection
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "scripts", "scripts", "{F80670F8-522D-46A6-8795-93A9982D02C3}"
+	ProjectSection(SolutionItems) = preProject
+		init.sql = init.sql
+	EndProjectSection
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{8A5282E6-4986-4CF0-8331-02CCD1728F77}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{8A5282E6-4986-4CF0-8331-02CCD1728F77}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{8A5282E6-4986-4CF0-8331-02CCD1728F77}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{8A5282E6-4986-4CF0-8331-02CCD1728F77}.Release|Any CPU.Build.0 = Release|Any CPU
+		{51EEB09F-F3ED-4022-BEC9-1BF06568B0C7}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{51EEB09F-F3ED-4022-BEC9-1BF06568B0C7}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{51EEB09F-F3ED-4022-BEC9-1BF06568B0C7}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{51EEB09F-F3ED-4022-BEC9-1BF06568B0C7}.Release|Any CPU.Build.0 = Release|Any CPU
+		{3A6F6C85-13AC-469C-AC94-9D97AB941CE0}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{3A6F6C85-13AC-469C-AC94-9D97AB941CE0}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{3A6F6C85-13AC-469C-AC94-9D97AB941CE0}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{3A6F6C85-13AC-469C-AC94-9D97AB941CE0}.Release|Any CPU.Build.0 = Release|Any CPU
+		{DDF7EAD4-AFB3-426D-B76A-97AF0BEFB899}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{DDF7EAD4-AFB3-426D-B76A-97AF0BEFB899}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{DDF7EAD4-AFB3-426D-B76A-97AF0BEFB899}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{DDF7EAD4-AFB3-426D-B76A-97AF0BEFB899}.Release|Any CPU.Build.0 = Release|Any CPU
+		{3B43A9E6-EB2C-4ACF-9BCE-630864E2A370}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{3B43A9E6-EB2C-4ACF-9BCE-630864E2A370}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{3B43A9E6-EB2C-4ACF-9BCE-630864E2A370}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{3B43A9E6-EB2C-4ACF-9BCE-630864E2A370}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{8A5282E6-4986-4CF0-8331-02CCD1728F77} = {02EA681E-C7D8-13C7-8484-4AC65E1B71E8}
+		{51EEB09F-F3ED-4022-BEC9-1BF06568B0C7} = {02EA681E-C7D8-13C7-8484-4AC65E1B71E8}
+		{3A6F6C85-13AC-469C-AC94-9D97AB941CE0} = {02EA681E-C7D8-13C7-8484-4AC65E1B71E8}
+		{DDF7EAD4-AFB3-426D-B76A-97AF0BEFB899} = {02EA681E-C7D8-13C7-8484-4AC65E1B71E8}
+		{3B43A9E6-EB2C-4ACF-9BCE-630864E2A370} = {02EA681E-C7D8-13C7-8484-4AC65E1B71E8}
+		{F80670F8-522D-46A6-8795-93A9982D02C3} = {9FA3D6BD-1EC1-3BA5-80CB-CE02773A58D5}
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {AB80A3EB-F071-435F-8E1B-C410BC3AD224}
+	EndGlobalSection
+EndGlobal

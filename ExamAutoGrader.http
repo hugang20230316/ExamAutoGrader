@@ -1,0 +1,6 @@
+@ExamAutoGrader_HostAddress = http://localhost:5138
+
+GET {{ExamAutoGrader_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###
