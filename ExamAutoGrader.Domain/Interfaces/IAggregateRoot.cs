@@ -15,6 +15,8 @@ public interface IAggregateRoot
 public interface IAggregateRoot<TKey> : IAggregateRoot
 {
     TKey Id { get; }
+    DateTime CreatedAt { get; }
+    DateTime UpdatedAt { get; }
 }
 
 public interface IAuditable

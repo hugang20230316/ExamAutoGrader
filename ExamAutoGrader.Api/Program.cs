@@ -1,16 +1,6 @@
-﻿using Castle.DynamicProxy;
-using ExamAutoGrader.Application.Interfaces;
-using ExamAutoGrader.Application.Services;
-using ExamAutoGrader.Domain.Interfaces;
-using ExamAutoGrader.Domain.Repositories;
+﻿using ExamAutoGrader.Application;
 using ExamAutoGrader.Infrastructure;
-using ExamAutoGrader.Infrastructure.AI;
-using ExamAutoGrader.Infrastructure.OCR;
-using ExamAutoGrader.Infrastructure.Parsing;
 using ExamAutoGrader.Infrastructure.Persistence;
-using ExamAutoGrader.Infrastructure.Persistence.Repositories;
-using ExamAutoGrader.Infrastructure.Services;
-using ExamAutoGrader.Infrastructure.Similarity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.FileProviders;
 
@@ -30,12 +20,11 @@ if (builder.Environment.IsDevelopment())
 }
 
 // 1. 控制器服务
-builder.Services.AddControllers()
-    .AddJsonOptions(options =>
-    {
-        options.JsonSerializerOptions.PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase;
-        options.JsonSerializerOptions.WriteIndented = builder.Environment.IsDevelopment();
-    });
+builder.Services.AddControllers().AddJsonOptions(options =>
+{
+    options.JsonSerializerOptions.PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase;
+    options.JsonSerializerOptions.WriteIndented = builder.Environment.IsDevelopment();
+});
 
 // 2. API探索和Swagger文档
 builder.Services.AddEndpointsApiExplorer();
@@ -72,56 +61,10 @@ builder.Services.AddDbContext<ExamAutoGraderDbContext>(options =>
     }
 }, ServiceLifetime.Scoped);
 
-builder.Services.AddHostedService<StartupService>();
 
-// 4. 核心服务注册 - 按照依赖顺序注册
-//builder.Services.AddUnitOfWorkCore();
-
-// AOP 支持
-builder.Services.AddScoped<IUnitOfWorkManager, UnitOfWorkManager>(); // 替换为你的实现
-builder.Services.AddScoped<IUnitOfWork, UnitOfWork>();
-// AOP 支持
-builder.Services.AddSingleton<IProxyGenerator, ProxyGenerator>();
-builder.Services.AddSingleton<UnitOfWorkInterceptor>();
-builder.Services.AddScoped<UnitOfWorkManager>();
-
-// 注册通用仓储（开放泛型）
-builder.Services.AddScoped(typeof(IRepository<,>), typeof(EfCoreRepository<,>));
-builder.Services.AddScoped<IFeedbackRecordRepository, FeedbackRecordRepository>();
-
-builder.Services.AddSingleton<IProxyGenerator, ProxyGenerator>();
-builder.Services.AddSingleton<UnitOfWorkInterceptor>(); // ✅ 单例，但现在不直接依赖 Scoped 服务
-
-// 4.1 首先注册基础设施层服务
-builder.Services.AddHttpClient<BaiduOCRService>();
-builder.Services.AddScoped<IOCRService, BaiduOCRService>();
-
-// 4.2 注册文件存储服务 - 必须在OCR处理服务之前注册！
-builder.Services.AddScoped<IFileStorageService, SimpleFileStorageService>();
-
-// 4.3 然后注册应用层服务（依赖基础设施层服务）
-builder.Services.AddScoped<IKnowledgeBaseService, KnowledgeBaseService>();
-builder.Services.AddScoped<IGradingService, GradingService>();
-builder.Services.AddScoped<IOCRProcessingService, OCRProcessingService>();
-builder.Services.AddHttpClient<GradingService>();
-
-
-// 4.4 注册其他基础设施服务
-builder.Services.AddScoped<IQuestionParserService, AlibabaAIParserService>();
-builder.Services.AddHttpClient<AlibabaAIParserService>();
-
-builder.Services.AddScoped<ILlmService, LlmService>();
-builder.Services.AddHttpClient<LlmService>();
-
-builder.Services.AddScoped<IEmbeddingService, DashScopeEmbeddingService>();
-builder.Services.AddHttpClient<DashScopeEmbeddingService>();
-builder.Services.Configure<DashScopeSettings>(builder.Configuration.GetSection("DashScope"));
-
-// 工作单元核心服务
-// 注册工作单元核心组件（类似 ABP 的 UnitOfWork 模块）
-builder.Services.AddExamAutoGraderInfrastructure();
-
-// 应用服务
+// 4. 核心服务注册
+builder.Services.AddExamAutoGraderInfrastructure(builder.Configuration);
+builder.Services.AddExamAutoGraderApplication();
 
 // 5. 注册必要的基础服务
 builder.Services.AddHttpContextAccessor(); // 重要：用于文件URL构建
@@ -152,11 +95,11 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseHttpsRedirection();
+
 // 启用静态文件服务
 app.UseStaticFiles(new StaticFileOptions
 {
-    FileProvider = new PhysicalFileProvider(
-        Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", "uploads")),
+    FileProvider = new PhysicalFileProvider(Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", "uploads")),
     RequestPath = "/uploads"
 });
 

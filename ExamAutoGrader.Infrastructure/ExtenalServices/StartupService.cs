@@ -4,7 +4,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 
-namespace ExamAutoGrader.Infrastructure.Services;
+namespace ExamAutoGrader.Infrastructure.ExtenalServices;
 
 public class StartupService : IHostedService
 {
@@ -66,7 +66,7 @@ public class StartupService : IHostedService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "=== StartupService 执行失败 ===");
+        _logger.LogError(ex, "=== StartupService 执行失败 ===");
             throw;
         }
     }

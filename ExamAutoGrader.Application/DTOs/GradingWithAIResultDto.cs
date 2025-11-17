@@ -3,7 +3,7 @@
 /// <summary>
 /// 评分结果DTO
 /// </summary>
-public class GradingResultDto
+public class GradingWithAIResultDto
 {
     /// <summary>
     /// 评分结果列表

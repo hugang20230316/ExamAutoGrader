@@ -1,6 +1,5 @@
 ﻿using ExamAutoGrader.Domain.Entities;
 using ExamAutoGrader.Domain.Interfaces;
-using ExamAutoGrader.Domain.ValueObjects;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using MySqlConnector;
@@ -15,6 +14,8 @@ public class ExamAutoGraderDbContext : DbContext
     public Guid InstanceId { get; } = Guid.NewGuid();
 
     public DbSet<FeedbackRecord> FeedbackRecords { get; set; }
+
+    public DbSet<GradingRecord> GradingRecords { get; set; }
 
     private readonly ILogger<ExamAutoGraderDbContext> _logger;
 
@@ -38,43 +39,146 @@ public class ExamAutoGraderDbContext : DbContext
     {
         base.OnModelCreating(modelBuilder);
 
-        // 配置FeedbackRecord实体
+        // 配置LearningRecord实体
         modelBuilder.Entity<FeedbackRecord>(entity =>
         {
             entity.ToTable("ai_feedback_record");
 
             entity.HasKey(e => e.Id);
 
-            entity.Property(e => e.Id).HasMaxLength(36);
+            // 主键：记录唯一标识（GUID 字符串）
+            entity.Property(e => e.Id)
+                  .HasMaxLength(36)
+                  .HasComment("反馈记录唯一ID，全局唯一标识符（GUID）");
 
-            entity.Property(e => e.QuestionId).HasMaxLength(36);
+            // 关联题目ID
+            entity.Property(e => e.QuestionId)
+                  .HasMaxLength(36)
+                  .HasComment("关联的题目唯一ID，可为空");
 
-            entity.Property(e => e.Subject).HasMaxLength(50);
+            // 学科名称
+            entity.Property(e => e.Subject)
+                  .HasMaxLength(50)
+                  .HasComment("学科名称，如：数学、物理、语文等");
 
-            entity.Property(e => e.QuestionType).HasConversion<int?>();
+            // 题目类型（枚举）
+            entity.Property(e => e.QuestionType)
+                  .HasConversion<int?>()
+                  .HasComment("题目类型：1=选择题，2=填空题，3=解答题，4=判断题等");
 
-            entity.Property(e => e.Stem).HasColumnType("longtext");
+            // 题干内容
+            entity.Property(e => e.Stem)
+                  .HasColumnType("longtext")
+                  .HasComment("题目题干内容，支持长文本");
 
-            entity.Property(e => e.StudentAnswer).HasColumnType("longtext");
+            // 学生作答
+            entity.Property(e => e.StudentAnswer)
+                  .HasColumnType("longtext")
+                  .HasComment("学生提交的答案内容");
 
-            entity.Property(e => e.ExpectedScore);
+            // 题目总分
+            entity.Property(e => e.Score).HasComment("题目总分");
 
-            entity.Property(e => e.FeedbackReason).HasColumnType("longtext");
+            // 期望得分（用于训练的目标分数）
+            entity.Property(e => e.ExpectedScore)
+                  .HasComment("期望得分（教师评分或历史标准分），用于AI模型训练的目标值");
 
-            entity.Property(e => e.StandardAnswer);
+            // AI反馈理由
+            entity.Property(e => e.FeedbackReason)
+                  .HasColumnType("longtext")
+                  .HasComment("AI生成的评分理由或反馈评语");
 
-            entity.Property(e => e.SemanticFingerprint);
+            // 标准答案
+            entity.Property(e => e.StandardAnswer)
+                  .HasComment("题目标准参考答案");
 
-            // 为常用查询字段添加索引
-            entity.HasIndex(e => e.Subject);
-            entity.HasIndex(e => e.QuestionType);
+            // 原始得分（可能来自其他系统）
+            entity.Property(e => e.OriginalScore)
+                  .HasComment("原始得分（如人工初评分数），可用于对比分析");
 
-            entity.Property(e => e.CreatedAt);
+            // 语义指纹（用于相似题匹配）
+            entity.Property(e => e.SemanticFingerprint)
+                  .HasComment("语义指纹，用于题目去重或相似题聚类（如哈希值或特征编码）");
 
-            entity.Property(e => e.UpdatedAt);
+            // 创建时间
+            entity.Property(e => e.CreatedAt)
+                  .HasComment("记录创建时间");
+
+            // 更新时间
+            entity.Property(e => e.UpdatedAt)
+                  .HasComment("记录最后更新时间");
+
+            // 索引：提升按学科查询性能
+            entity.HasIndex(e => e.Subject)
+                  .HasDatabaseName("idx_subject");
+
+            // 索引：提升按题型查询性能
+            entity.HasIndex(e => e.QuestionType)
+                  .HasDatabaseName("idx_question_type");
+
         });
 
-        modelBuilder.Entity<QuestionFingerprint>().HasKey(q => new { q.Stem, q.Subject });
+        //生成GradingRecord实体的配置
+        modelBuilder.Entity<GradingRecord>(entity =>
+        {
+            entity.ToTable("ai_grading_record");
+
+            entity.HasKey(e => e.Id);
+
+            // 主键：记录唯一标识（GUID 字符串）
+            entity.Property(e => e.Id)
+                  .HasMaxLength(36)
+                  .HasComment("评分记录唯一ID，全局唯一标识符（GUID）");
+
+            // 关联题目ID
+            entity.Property(e => e.QuestionId)
+                  .HasMaxLength(36)
+                  .HasComment("关联的题目唯一ID，可为空");
+
+            // 学科名称
+            entity.Property(e => e.Subject)
+                  .HasMaxLength(50)
+                  .HasComment("学科名称，如：数学、物理、语文等");
+
+            // 题目类型（枚举）
+            entity.Property(e => e.QuestionType)
+                  .HasConversion<int?>()
+                  .HasComment("题目类型：1=选择题，2=填空题，3=解答题，4=判断题等");
+
+            // 题干内容
+            entity.Property(e => e.Stem)
+                  .HasColumnType("longtext")
+                  .HasComment("题目题干内容，支持长文本");
+
+            // 学生作答
+            entity.Property(e => e.StudentAnswer)
+                  .HasColumnType("longtext")
+                  .HasComment("学生提交的答案内容");
+
+            // 标准答案
+            entity.Property(e => e.StandardAnswer)
+                  .HasColumnType("longtext")
+                  .HasComment("题目标准参考答案");
+
+            // 原始得分（AI 给分或外部来源）
+            entity.Property(e => e.OriginalScore)
+                  .HasComment("AI 给分或外部系统提供的原始得分");
+
+            // 评分原因/评语（AI 生成或人工补充）
+            entity.Property(e => e.GradingReason)
+                  .HasColumnType("longtext")
+                  .HasComment("评分理由或评语");
+
+            // 索引：按学科查询
+            entity.HasIndex(e => e.Subject)
+                  .HasDatabaseName("idx_grading_subject");
+
+            // 索引：按题型查询
+            entity.HasIndex(e => e.QuestionType)
+                  .HasDatabaseName("idx_grading_question_type");
+
+            // 可根据需要添加更多约束/默认值，例如创建时间、评分来源等（仅当实体包含这些属性时）
+        });
 
         _logger.LogInformation("数据库模型配置完成");
     }

@@ -8,7 +8,7 @@ public interface IUnitOfWork : IDisposable
 {
     Task CompleteAsync(CancellationToken cancellationToken = default);
     Task DisposeAsync();
-    Task RollbackAsync();
+    Task RollbackAsync(CancellationToken cancellationToken = default);
 
     object GetDbContext();
 }

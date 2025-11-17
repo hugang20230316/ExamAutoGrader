@@ -1,9 +1,22 @@
-﻿// Modules/ExamAutoGraderInfrastructureModule.cs
-using Castle.DynamicProxy;
-using ExamAutoGrader.Domain.Attributes;
+﻿using Castle.DynamicProxy;
+using ExamAutoGrader.Application.Abstractions;
+using ExamAutoGrader.Application.Interfaces;
+using ExamAutoGrader.Domain.Entities;
+using ExamAutoGrader.Domain.Events;
 using ExamAutoGrader.Domain.Interfaces;
+using ExamAutoGrader.Domain.Repositories;
+using ExamAutoGrader.Infrastructure.AI;
+using ExamAutoGrader.Infrastructure.Events;
+using ExamAutoGrader.Infrastructure.ExtenalServices;
+using ExamAutoGrader.Infrastructure.File;
+using ExamAutoGrader.Infrastructure.Grading;
+using ExamAutoGrader.Infrastructure.OCR;
+using ExamAutoGrader.Infrastructure.Parsing;
 using ExamAutoGrader.Infrastructure.Persistence;
+using ExamAutoGrader.Infrastructure.Persistence.Repositories;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using System.Reflection;
 
 namespace ExamAutoGrader.Infrastructure;
@@ -12,87 +25,83 @@ namespace ExamAutoGrader.Infrastructure;
 /// 模仿 ABP 模块系统，封装基础设施层的自动注册逻辑。
 /// </summary>
 public static class ExamAutoGraderInfrastructureModule
-{
-    public static IServiceCollection AddExamAutoGraderInfrastructure(this IServiceCollection services)
+{// 方法签名添加 IConfiguration 参数
+    public static IServiceCollection AddExamAutoGraderInfrastructure(this IServiceCollection services, IConfiguration configuration)
     {
-        var assembly = Assembly.GetExecutingAssembly();
+        services.AddScoped<IEventBus, EventBus>();
+        // 注册拦截器相关服务
+        services.AddSingleton<IProxyGenerator, ProxyGenerator>();// 🔥 添加缺失的仓储注册
+        services.AddScoped<IFeedbackRecordRepository, FeedbackRecordRepository>();
+        services.AddScoped<IRepository<GradingRecord, Guid>, EfCoreRepository<GradingRecord, Guid>>();
 
-        // 注册工作单元核心服务（类似 ABP 的 Conventional Registration）
-        services.AddUnitOfWorkCore();
+        services.AddScoped<UnitOfWorkInterceptor>();
 
-        // 扫描并注册所有需要事务代理的服务
-        RegisterUnitOfWorkProxiedServices(services, assembly);
+        // 注册工作单元管理器
+        services.AddScoped<IUnitOfWorkManager, UnitOfWorkManager>();
+        services.AddScoped<IUnitOfWork, UnitOfWork>();
+
+        services.AddHttpClient<BaiduOCRService>();
+        services.AddScoped<IOCRService, BaiduOCRService>();
+
+        services.AddScoped<IFileStorageService, FileStorageService>();
+        services.AddScoped<IOCRProcessingService, OCRProcessingService>();
+        services.AddScoped<IQuestionParserService, AlibabaAIParserService>();
+        services.AddHttpClient<AlibabaAIParserService>();
+        services.AddScoped<ILlmService, LlmService>();
+        services.AddHttpClient<LlmService>();
+        services.AddScoped<IEmbeddingService, DashScopeEmbeddingService>();
+        services.AddHttpClient<DashScopeEmbeddingService>();
+        services.Configure<DashScopeSettings>(configuration.GetSection("DashScope"));
+        services.AddHostedService<StartupService>();
+
+        // 🔥 只保留这一套自动注册逻辑（删除其他重复的）
+        RegisterAllProxiedServices(services);
 
         return services;
     }
 
-    private static void RegisterUnitOfWorkProxiedServices(IServiceCollection services, Assembly assembly)
+    // 统一的自动注册方法
+    private static void RegisterAllProxiedServices(IServiceCollection services)
     {
-        // 找出所有可能需要 UnitOfWork 拦截的类型
-        var typesToProxy = assembly.GetTypes()
-            .Where(t => t.IsClass &&
-                        !t.IsAbstract &&
-                        ImplementsServiceInterface(t) &&
-                        (HasUnitOfWorkOnClassOrMethods(t)))
-            .ToList();
+        var allAssemblies = AppDomain.CurrentDomain.GetAssemblies().Where(a => a.FullName.Contains("ExamAutoGrader")).ToList();
 
-        foreach (var type in typesToProxy)
+        foreach (var assembly in allAssemblies)
         {
-            // 优先使用接口代理（ABP 风格）
-            var serviceInterfaces = type.GetInterfaces()
-                .Where(i => i.Name.EndsWith("Service") ||
-                            i.Name.EndsWith("Repository") ||
-                            i.Name.StartsWith("I"))
-                .ToArray();
-
-            if (serviceInterfaces.Length > 0)
+            try
             {
-                foreach (var iface in serviceInterfaces)
+                var serviceTypes = assembly.GetTypes()
+                    .Where(t => t.IsClass && !t.IsAbstract &&
+                               t.GetInterfaces().Any(i => (i.Name.EndsWith("Service") && !i.Name.Contains("HostedService")) || i.Name.EndsWith("Repository")))
+                    .ToList();
+
+                foreach (var serviceType in serviceTypes)
                 {
-                    services.AddTransient(iface, provider =>
+                    var interfaces = serviceType.GetInterfaces()
+                        .Where(i => (i.Name.StartsWith("I") && i.Name.EndsWith("Service")) || (i.Name.StartsWith("I") && i.Name.EndsWith("Repository")))
+                        .ToList();
+
+                    foreach (var interfaceType in interfaces)
                     {
-                        var proxyGenerator = provider.GetRequiredService<IProxyGenerator>();
-                        var interceptor = provider.GetRequiredService<UnitOfWorkInterceptor>();
+                        // 注册具体实现
+                        services.AddScoped(serviceType);
 
-                        var targetInstance = ActivatorUtilities.CreateInstance(provider, type);
+                        // 注册代理接口
+                        services.AddScoped(interfaceType, provider =>
+                        {
+                            var proxyGenerator = provider.GetRequiredService<IProxyGenerator>();
+                            var target = provider.GetRequiredService(serviceType);
+                            var interceptor = provider.GetRequiredService<UnitOfWorkInterceptor>();
+                            return proxyGenerator.CreateInterfaceProxyWithTarget(interfaceType, target, interceptor);
+                        });
 
-                        return proxyGenerator.CreateInterfaceProxyWithTarget(
-                            interfaceToProxy: iface,
-                            target: targetInstance,
-                            interceptors: new IInterceptor[] { interceptor }
-                        );
-                    });
+                        Console.WriteLine($"✅ 注册代理服务: {interfaceType.Name} -> {serviceType.Name}");
+                    }
                 }
             }
-            else
+            catch (Exception ex)
             {
-                // 无接口时代理类（要求 virtual 方法）
-                services.AddTransient(type, provider =>
-                {
-                    var proxyGenerator = provider.GetRequiredService<IProxyGenerator>();
-                    var interceptor = provider.GetRequiredService<UnitOfWorkInterceptor>();
-                    return proxyGenerator.CreateClassProxy(type, interceptor);
-                });
+                Console.WriteLine($"⚠️ 扫描程序集 {assembly.FullName} 失败: {ex.Message}");
             }
         }
-    }
-
-    private static bool ImplementsServiceInterface(Type type)
-    {
-        return type.GetInterfaces().Any(i =>
-            i.Name.EndsWith("Service") ||
-            i.Name.EndsWith("Repository") ||
-            typeof(IUnitOfWork).IsAssignableFrom(i) == false); // 排除 UoW 自身
-    }
-
-    private static bool HasUnitOfWorkOnClassOrMethods(Type type)
-    {
-        // 类上有 [UnitOfWork]
-        if (type.GetCustomAttribute<UnitOfWorkAttribute>() != null)
-            return true;
-
-        // 任意方法上有 [UnitOfWork]
-        return type.GetMethods(BindingFlags.Public | BindingFlags.Instance)
-                   .Any(m => m.GetCustomAttribute<UnitOfWorkAttribute>() != null);
     }
 }

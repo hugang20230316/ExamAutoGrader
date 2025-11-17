@@ -4,8 +4,7 @@
 /// 通用仓储接口（模拟 ABP IRepository）
 /// </summary>
 /// <typeparam name="TEntity">实体类型</typeparam>
-public interface IRepository<TAggregate, TKey>
-    where TAggregate : IAggregateRoot<TKey>
+public interface IRepository<TAggregate, TKey> where TAggregate : IAggregateRoot<TKey>
 {
     /// <summary>
     /// 根据ID获取实体

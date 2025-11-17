@@ -1,17 +1,18 @@
-﻿using ExamAutoGrader.Domain.Interfaces;
+﻿using System.IO;
+using ExamAutoGrader.Domain.Interfaces;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
 
-namespace ExamAutoGrader.Infrastructure.Similarity;
+namespace ExamAutoGrader.Infrastructure.File;
 
-public class SimpleFileStorageService : IFileStorageService
+public class FileStorageService : IFileStorageService
 {
     private readonly IHttpContextAccessor _httpContextAccessor;
-    private readonly ILogger<SimpleFileStorageService> _logger;
+    private readonly ILogger<FileStorageService> _logger;
 
-    public SimpleFileStorageService(
+    public FileStorageService(
         IHttpContextAccessor httpContextAccessor,
-        ILogger<SimpleFileStorageService> logger)
+        ILogger<FileStorageService> logger)
     {
         _httpContextAccessor = httpContextAccessor;
         _logger = logger;
@@ -78,9 +79,9 @@ public class SimpleFileStorageService : IFileStorageService
     {
         try
         {
-            if (File.Exists(filePath))
+            if (System.IO.File.Exists(filePath)) // 明确指定System.IO.File
             {
-                File.Delete(filePath);
+                System.IO.File.Delete(filePath);
                 _logger.LogDebug("已删除文件：{FilePath}", filePath);
             }
         }
@@ -94,6 +95,6 @@ public class SimpleFileStorageService : IFileStorageService
 
     public async Task<bool> FileExistsAsync(string filePath)
     {
-        return await Task.FromResult(File.Exists(filePath));
+        return await Task.FromResult(System.IO.File.Exists(filePath)); // 明确指定System.IO.File
     }
 }

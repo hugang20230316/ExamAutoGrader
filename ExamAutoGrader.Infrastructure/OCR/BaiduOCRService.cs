@@ -1,5 +1,4 @@
 ﻿using ExamAutoGrader.Application.Interfaces;
-using ExamAutoGrader.Infrastructure.Similarity;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using System.Text.Json;
@@ -33,11 +32,8 @@ public class BaiduOCRService : IOCRService
 
     public async Task<string> RecognizeTextAsync(string imagePath)
     {
-        var projectRoot = Directory.GetCurrentDirectory();
-        var filePath = Path.Combine(projectRoot, imagePath);
-
         // 验证文件存在
-        if (!File.Exists(filePath))
+        if (!System.IO.File.Exists(imagePath))
         {
             throw new FileNotFoundException($"图片文件不存在：{imagePath}");
         }
@@ -50,7 +46,7 @@ public class BaiduOCRService : IOCRService
         try
         {
             // 读取图片文件并转换为Base64
-            var imageBytes = await File.ReadAllBytesAsync(imagePath);
+            var imageBytes = await System.IO.File.ReadAllBytesAsync(imagePath);
             var imageBase64 = Convert.ToBase64String(imageBytes);
 
             // 构建请求参数
@@ -88,13 +84,9 @@ public class BaiduOCRService : IOCRService
 
             // 拼接识别结果
             var rawRecognizedText = string.Join("\n", ocrResponse.WordsResult.Select(w => w.Words));
-
-            // 简单校正：只替换已知错误
-            var correctedRecognizedText = SimpleOCRCorrector.CorrectKnownErrors(rawRecognizedText);
-
             _logger.LogInformation("OCR识别完成，识别出 {LineCount} 行文本", ocrResponse.WordsResult.Count);
 
-            return correctedRecognizedText;
+            return rawRecognizedText;
         }
         catch (Exception ex)
         {

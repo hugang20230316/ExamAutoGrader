@@ -2,7 +2,7 @@
 
 namespace ExamAutoGrader.Domain.Entities;
 
-public abstract class AggregateRoot<TKey> : Entity<TKey>, IAggregateRoot<TKey>
+public abstract class AggregateRoot<TKey> : Entity<TKey>, IAggregateRoot
 {
     private readonly List<IDomainEvent> _domainEvents = new List<IDomainEvent>();
 

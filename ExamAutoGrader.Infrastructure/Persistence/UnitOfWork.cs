@@ -21,41 +21,21 @@ public class UnitOfWork(ExamAutoGraderDbContext dbContext, ILogger<UnitOfWorkMan
         await PublishDomainEventsAsync(cancellationToken);
     }
 
-    public Task RollbackAsync()
-    {
-        if (_disposed) throw new ObjectDisposedException(nameof(UnitOfWork));
-
-        var transaction = _context.Database.CurrentTransaction;
-        if (transaction != null)
-        {
-            _logger.LogDebug("【UnitOfWork】回滚事务");
-            return transaction.RollbackAsync();
-        }
-        return Task.CompletedTask;
-    }
-
     public void Dispose()
     {
-        if (!_disposed)
-        {
-            _context.Database.CurrentTransaction?.Dispose();
-            _disposed = true;
-        }
     }
 
     public async Task DisposeAsync()
     {
         if (!_disposed)
         {
-            if (_context.Database.CurrentTransaction != null)
-            {
-                await _context.Database.CurrentTransaction.DisposeAsync().ConfigureAwait(false);
-            }
             _disposed = true;
         }
     }
 
     public object GetDbContext() => _context;
+
+    public Task RollbackAsync(CancellationToken cancellationToken = default) => null;
 
     private async Task PublishDomainEventsAsync(CancellationToken cancellationToken)
     {

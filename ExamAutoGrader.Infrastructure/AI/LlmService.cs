@@ -10,24 +10,24 @@ namespace ExamAutoGrader.Infrastructure.AI;
 public class LlmService : ILlmService
 {
     private readonly HttpClient _httpClient;
-    private readonly string _apiKey;
-    private readonly string _apiBaseUrl;
     private readonly string _model;
     private readonly ILogger<LlmService> _logger;
 
-    // 如果你仍用 OpenAiSettings，就保留 IOptions<OpenAiSettings>
     public LlmService(
-        IOptions<DashScopeSettings> dashScopeOptions, // 👈 推荐改名
+        IOptions<DashScopeSettings> dashScopeOptions,
         ILogger<LlmService> logger,
-        HttpClient httpClient) // 注入 HttpClient（最佳实践）
+        IHttpClientFactory httpClientFactory)
     {
         var settings = dashScopeOptions.Value;
-        _apiKey = settings.ApiKey ?? throw new InvalidOperationException("DashScope:ApiKey 未配置");
+        var apiKey = settings.ApiKey ?? throw new InvalidOperationException("DashScope:ApiKey 未配置");
         _model = settings.Model ?? "qwen-turbo";
-        _httpClient = httpClient;
-        _httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", _apiKey);
+
+        _httpClient = httpClientFactory.CreateClient();
+        _httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
+        _httpClient.Timeout = TimeSpan.FromSeconds(60);
+        _httpClient.BaseAddress = new Uri(settings.ApiBaseUrl);
+
         _logger = logger;
-        _apiBaseUrl = settings.ApiBaseUrl;
     }
 
     public async Task<string> GenerateSemanticFingerprintAsync(
@@ -44,16 +44,10 @@ public class LlmService : ILlmService
 - 只输出指纹，不要解释
 - 中文题目也要输出英文指纹
 
-示例：
-题目：'求函数 f(x)=x² 在 x=2 处的导数'
-科目：数学
-输出：math.calculus.derivative.at_point
-
 题目：'{stem}'
 科目：{subject}
 输出：";
 
-            // 构建 DashScope 请求体
             var requestBody = new
             {
                 model = _model,
@@ -67,7 +61,7 @@ public class LlmService : ILlmService
                 parameters = new
                 {
                     temperature = 0.3,
-                    max_tokens = 100
+                    max_tokens = 50
                 }
             };
 
@@ -76,13 +70,9 @@ public class LlmService : ILlmService
                 PropertyNamingPolicy = JsonNamingPolicy.CamelCase
             });
 
-            var content = new StringContent(json, Encoding.UTF8, "application/json");
+            using var content = new StringContent(json, Encoding.UTF8, "application/json");
 
-            // 调用 DashScope API
-            var response = await _httpClient.PostAsync(
-                _apiBaseUrl,
-                content,
-                ct);
+            var response = await _httpClient.PostAsync("", content, ct);
 
             if (!response.IsSuccessStatusCode)
             {
@@ -93,26 +83,54 @@ public class LlmService : ILlmService
             }
 
             var responseJson = await response.Content.ReadAsStringAsync(ct);
-            using var doc = JsonDocument.Parse(responseJson);
-            var output = doc.RootElement
-                .GetProperty("output")
-                .GetProperty("choices")[0]
-                .GetProperty("message")
-                .GetProperty("content")
-                .GetString();
-
-            var fingerprint = output?.Trim()
-                .ToLowerInvariant()
-                .Replace(" ", "_")
-                .Replace("output:", "")
-                .Trim('\'', '"', '.', ' ') ?? "unknown";
-
-            return string.IsNullOrEmpty(fingerprint) ? "unknown" : fingerprint;
+            return ParseApiResponse(responseJson);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "生成语义指纹异常（通义千问）");
+            _logger.LogError(ex, "生成语义指纹异常");
             return "unknown";
         }
+    }
+
+    private string ParseApiResponse(string responseJson)
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(responseJson);
+            var root = doc.RootElement;
+
+            if (root.TryGetProperty("output", out var outputElement) &&
+                outputElement.TryGetProperty("text", out var textElement))
+            {
+                var output = textElement.GetString();
+                return ProcessFingerprint(output);
+            }
+
+            _logger.LogError("API 响应格式不符合预期，缺少 'output.text' 字段");
+            return "unknown";
+        }
+        catch (JsonException ex)
+        {
+            _logger.LogError(ex, "解析 API 响应 JSON 失败");
+            return "unknown";
+        }
+    }
+
+    private string ProcessFingerprint(string? output)
+    {
+        if (string.IsNullOrWhiteSpace(output))
+        {
+            _logger.LogError("API 返回的 text 内容为空");
+            return "unknown";
+        }
+
+        var fingerprint = output.Trim()
+            .ToLowerInvariant()
+            .Replace(" ", "_")
+            .Trim('\'', '"', '.', ' ');
+
+        _logger.LogInformation("成功生成语义指纹: {Fingerprint}", fingerprint);
+
+        return string.IsNullOrEmpty(fingerprint) ? "unknown" : fingerprint;
     }
 }

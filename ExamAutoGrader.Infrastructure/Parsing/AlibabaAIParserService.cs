@@ -1,4 +1,5 @@
-﻿using ExamAutoGrader.Application.Interfaces;
+﻿using ExamAutoGrader.Application.DTOs;
+using ExamAutoGrader.Application.Interfaces;
 using ExamAutoGrader.Domain.Entities;
 using ExamAutoGrader.Domain.Enums;
 using Microsoft.Extensions.Configuration;
@@ -23,11 +24,38 @@ public class AlibabaAIParserService : IQuestionParserService
     {
         _httpClient = httpClient;
         _logger = logger;
-        _apiKey = configuration["AI:ApiKey"] ?? throw new ArgumentException("AI API Key未配置");
-        _apiBaseUrl = configuration["AI:ApiBaseUrl"] ?? throw new ArgumentException("AI API BaseUrl未配置");
+        _apiKey = configuration["DashScope:ApiKey"] ?? throw new ArgumentException("DashScope API Key未配置");
+        _apiBaseUrl = configuration["DashScope:ApiBaseUrl"] ?? throw new ArgumentException("DashScope API BaseUrl未配置");
     }
 
-    public async Task<ExamQuestion> ParseQuestionFromOCRResultAsync(string ocrText)
+    public async Task<ExamQuestionDto> ParseQuestionFromOCRResultAsync(string ocrText)
+    {
+        var prompt = $@"分析以下文本中的考试题目结构：
+题目编号（QuestionNumber，字符串类型）、
+题目类型（QuestionType：SingleChoice=1,MultipleChoice=2,Subjective=3,FillInBlank=4,Other=0）、
+题干（Stem，去掉(数字)分）、
+题目总分（TotalScore，数字类型）、
+小题集合（Items：[{{题目编号(格式必须是:主题号(小题号))、题干、题目总分}}]）
+
+返回JSON格式：
+{ocrText}";
+
+        return await CallAIAndParseAsync<ExamQuestionDto>(prompt, "解析题目失败");
+    }
+
+    public async Task<ExamQuestionAnswerDto> ParseQuestionAnswerFromOCRResultAsync(string ocrText)
+    {
+        var prompt = $@"分析以下文本中的学生答题信息：
+题目编号（QuestionNumber，字符串类型，(格式必须是:主题号(小题号))）、
+小题集合（Items：[{{题目编号(格式必须是:主题号(小题号)、答题信息（StudentAnswer）}}]）
+
+返回JSON格式：
+{ocrText}";
+
+        return await CallAIAndParseAsync<ExamQuestionAnswerDto>(prompt, "解析答案失败");
+    }
+
+    private async Task<T> CallAIAndParseAsync<T>(string prompt, string errorMessage) where T : new()
     {
         try
         {
@@ -36,57 +64,30 @@ public class AlibabaAIParserService : IQuestionParserService
                 model = "qwen-turbo",
                 input = new
                 {
-                    messages = new[]
-                    {
-                        new
-                        {
-                            role = "user",
-                            content = $@"分析以下文本中的考试题目结构，
-题目编号（QuestionNumber）(字符串类型)、
-题目类型（QuestionType(SingleChoice = 1,MultipleChoice = 2,Subjective = 3,FillInBlank = 4,Other = 0)）、
-题干（Stem）、
-题目总分（TotalScore）(数字类型)，
-小题集合(Items):[{{
-    题目编号（QuestionNumber）(字符串类型例:1(1))、
-    题干（Stem）、
-    学生答案(StudentAnswer)、
-    题目总分（TotalScore）(数字类型)                  
-}}]
-返回JSON格式,确保JSON格式正确：
-{ocrText}"
-                        }
-                    }
+                    messages = new[] { new { role = "user", content = prompt } }
                 }
             };
 
             var json = JsonSerializer.Serialize(requestBody);
-            var request = new StringContent(json, Encoding.UTF8, "application/json");
+            var content = new StringContent(json, Encoding.UTF8, "application/json");
 
             _httpClient.DefaultRequestHeaders.Clear();
             _httpClient.DefaultRequestHeaders.Add("Authorization", $"Bearer {_apiKey}");
 
-            var response = await _httpClient.PostAsync(_apiBaseUrl, request);
-
-            if (!response.IsSuccessStatusCode)
-                throw new HttpRequestException("API调用失败");
+            var response = await _httpClient.PostAsync(_apiBaseUrl, content);
+            response.EnsureSuccessStatusCode();
 
             var responseContent = await response.Content.ReadAsStringAsync();
-            return ParseAIResponse(responseContent);
+            return ParseAIResponse<T>(responseContent);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "AI解析失败");
-            throw;
+            _logger.LogError(ex, errorMessage);
+            return new T();
         }
     }
 
-    public List<ExamQuestionItem> ExamQuestionItems(string ocrText)
-    {
-        // 简单返回空列表，完全依赖AI
-        return new List<ExamQuestionItem>();
-    }
-
-    private ExamQuestion ParseAIResponse(string responseContent)
+    private T ParseAIResponse<T>(string responseContent) where T : new()
     {
         try
         {
@@ -94,38 +95,27 @@ public class AlibabaAIParserService : IQuestionParserService
             var aiText = apiResponse?.Output?.Text;
 
             if (string.IsNullOrEmpty(aiText))
-                return CreateDefaultQuestion();
+                return new T();
 
-            // 提取JSON部分
             var jsonStart = aiText.IndexOf('{');
             var jsonEnd = aiText.LastIndexOf('}');
 
             if (jsonStart >= 0 && jsonEnd > jsonStart)
             {
                 var json = aiText.Substring(jsonStart, jsonEnd - jsonStart + 1);
-                return JsonSerializer.Deserialize<ExamQuestion>(json) ?? CreateDefaultQuestion();
+                return JsonSerializer.Deserialize<T>(json) ?? new T();
             }
 
-            return CreateDefaultQuestion();
+            return new T();
         }
-        catch(Exception ex)
+        catch (Exception ex)
         {
-            return CreateDefaultQuestion(null,ex.Message);
+            _logger.LogError(ex, "解析AI响应失败");
+            return new T();
         }
-    }
-
-    private ExamQuestion CreateDefaultQuestion(EQuestionType? questionType = null,string stem = "解析失败")
-    {
-        return new ExamQuestion
-        {
-            QuestionType = questionType,
-            Stem = stem,
-            Items = []
-        };
     }
 }
 
-// 简化的响应模型
 public class AlibabaAIResponse
 {
     [JsonPropertyName("output")]

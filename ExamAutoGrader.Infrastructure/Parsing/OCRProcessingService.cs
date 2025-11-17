@@ -39,7 +39,7 @@ public class OCRProcessingService : IOCRProcessingService
         try
         {
             // 构建访问URL并识别
-            var recognitionResult = await RecognizeImageAsync(saveResult.FileUrl);
+            var recognitionResult = await RecognizeImageAsync(saveResult.SavedFilePath);
 
             return new OCRResultDto
             {

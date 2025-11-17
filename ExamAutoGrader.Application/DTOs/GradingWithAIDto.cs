@@ -5,7 +5,7 @@ namespace ExamAutoGrader.Application.DTOs;
 /// <summary>
 /// 考试题目DTO
 /// </summary>
-public class GradingExamQuestionDto
+public class GradingWithAIDto
 {
     /// <summary>
     /// 科目
@@ -30,13 +30,13 @@ public class GradingExamQuestionDto
     /// <summary>
     /// 翻译题目项集合
     /// </summary>
-    public List<GradingExamQuestionItemDto> Items { get; set; } = new();
+    public List<GradingWithAIItemDto> Items { get; set; } = new();
 }
 
 /// <summary>
 /// 评分项 DTO（单个题目的评分请求）
 /// </summary>
-public class GradingExamQuestionItemDto
+public class GradingWithAIItemDto
 {
     /// <summary>
     /// 题号（如 "1", "2.1", "A-1" 等）
@@ -78,47 +78,4 @@ public class GradingExamQuestionItemDto
     /// </summary>
     public EQuestionType? QuestionType { get; set; }
 
-    /// <summary>
-    /// 额外评分说明（可选，用于特殊评分要求）
-    /// </summary>
-    public string? GradingInstructions { get; set; }
-
-    /// <summary>
-    /// 附件信息（如图片路径、音频链接等，可选）
-    /// </summary>
-    public List<string> Attachments { get; set; } = new();
-
-    /// <summary>
-    /// 学生ID（可选，用于个性化评分）
-    /// </summary>
-    public Guid? StudentId { get; set; }
-
-    /// <summary>
-    /// 题目难度等级（可选，用于评分权重）
-    /// </summary>
-    public int? DifficultyLevel { get; set; }
-
-    /// <summary>
-    /// 题目知识点标签（可选，用于知识图谱）
-    /// </summary>
-    public List<string> KnowledgePoints { get; set; } = new();
-
-    /// <summary>
-    /// 验证数据完整性
-    /// </summary>
-    public bool IsValid()
-    {
-        return !string.IsNullOrWhiteSpace(QuestionNumber) &&
-               !string.IsNullOrWhiteSpace(Stem) &&
-               !string.IsNullOrWhiteSpace(StudentAnswer) &&
-               TotalScore > 0;
-    }
-
-    /// <summary>
-    /// 获取题目的唯一标识（用于缓存和匹配）
-    /// </summary>
-    public string GetUniqueKey()
-    {
-        return $"{Subject}_{QuestionType}_{Stem.GetHashCode()}_{StudentAnswer.GetHashCode()}";
-    }
 }

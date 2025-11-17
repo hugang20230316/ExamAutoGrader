@@ -1,146 +1,138 @@
 ﻿using Castle.DynamicProxy;
 using ExamAutoGrader.Application.Abstractions;
-using ExamAutoGrader.Domain.Attributes;
 using ExamAutoGrader.Domain.Interfaces;
-using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using System.Reflection;
 
 namespace ExamAutoGrader.Infrastructure.Persistence;
 
+/// <summary>
+/// 工作单元拦截器，用于自动提交或回滚事务
+/// </summary>
 public class UnitOfWorkInterceptor : IInterceptor
 {
     private readonly ILogger<UnitOfWorkInterceptor> _logger;
+    private readonly IUnitOfWork _unitOfWork;
 
-    public UnitOfWorkInterceptor( ILogger<UnitOfWorkInterceptor> logger)
+    public UnitOfWorkInterceptor(
+        ILogger<UnitOfWorkInterceptor> logger,
+        IUnitOfWork unitOfWork)
     {
-        _logger = logger;
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _unitOfWork = unitOfWork ?? throw new ArgumentNullException(nameof(unitOfWork));
     }
 
     public void Intercept(IInvocation invocation)
     {
+        var method = invocation.MethodInvocationTarget ?? invocation.Method;
+        var methodName = method.Name;
+        var typeName = method.DeclaringType?.Name ?? "UnknownType";
+
+        // 放行查询类方法（约定：以 Get/Find/Query/List 开头的方法不开启写事务）
+        if (IsReadOnlyMethod(methodName))
+        {
+            invocation.Proceed();
+            return;
+        }
+
         var unitOfWorkAttr = GetUnitOfWorkAttribute(invocation);
         if (unitOfWorkAttr == null || unitOfWorkAttr.IsDisabled)
         {
-            _logger.LogDebug("未找到工作单元特性，直接执行方法: {Method}", invocation.Method.Name);
+            _logger.LogDebug("方法 {TypeName}.{MethodName} 未启用工作单元，直接执行。", typeName, methodName);
             invocation.Proceed();
             return;
         }
-
-        // 关键步骤 1：获取被拦截的 Service 实例（Scoped 生命周期，已注入 IUnitOfWorkManager）
-        var targetService = invocation.InvocationTarget;
-        if (targetService == null)
-        {
-            _logger.LogError("无法获取被拦截的服务实例: {Method}", invocation.Method.Name);
-            invocation.Proceed();
-            return;
-        }
-
-        // 2. 从被拦截的服务获取Scoped容器（服务继承ScopedServiceBase，实现IServiceProviderAccessor）
-        if (targetService is not IServiceProviderAccessor serviceProviderAccessor)
-        {
-            throw new InvalidOperationException($"服务{targetService.GetType().Name}必须继承ScopedServiceBase");
-        }
-
-        using var unitOfWork = serviceProviderAccessor.ServiceProvider.GetRequiredService<IUnitOfWork>();
 
         try
         {
-            invocation.Proceed(); // 执行 Service 方法（仓储和拦截器共享同一个 DbContext）
+            invocation.Proceed();
 
-            if (invocation.ReturnValue is Task task)
+            var returnType = method.ReturnType;
+
+            if (returnType == typeof(Task))
             {
-                invocation.ReturnValue = InterceptAsync(task, unitOfWork, invocation.Method.Name);
+                // 处理 async Task（无返回值）
+                var task = (Task)invocation.ReturnValue!;
+                invocation.ReturnValue = HandleAsyncWithoutResult(task, typeName, methodName);
+            }
+            else if (returnType.IsGenericType && returnType.GetGenericTypeDefinition() == typeof(Task<>))
+            {
+                // 处理 async Task<T>（有返回值）
+                var task = (Task)invocation.ReturnValue!;
+                var resultType = returnType.GenericTypeArguments[0];
+                var genericMethod = GetType()
+                    .GetMethod(nameof(HandleAsyncWithResult), BindingFlags.NonPublic | BindingFlags.Instance)!
+                    .MakeGenericMethod(resultType);
+
+                invocation.ReturnValue = genericMethod.Invoke(this, new object[] { task, typeName, methodName });
             }
             else
             {
-                unitOfWork.CompleteAsync().GetAwaiter().GetResult();
+                // 同步方法（void 或 T）
+                _unitOfWork.CompleteAsync().GetAwaiter().GetResult();
             }
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "工作单元执行失败: {Method}", invocation.Method.Name);
-            unitOfWork.RollbackAsync().GetAwaiter().GetResult(); // 异常回滚
+            _logger.LogError(ex, "工作单元执行失败：{TypeName}.{MethodName}", typeName, methodName);
+            try
+            {
+                _unitOfWork.RollbackAsync().GetAwaiter().GetResult();
+            }
+            catch (Exception rollbackEx)
+            {
+                _logger.LogError(rollbackEx, "事务回滚失败：{TypeName}.{MethodName}", typeName, methodName);
+            }
             throw;
-        }
-        finally
-        {
-            unitOfWork.Dispose();
-            _logger.LogDebug("工作单元同步提交完成: {Method}", invocation.Method.Name);
         }
     }
 
-    private async Task InterceptAsync(Task task, IUnitOfWork unitOfWork, string methodName)
+    private bool IsReadOnlyMethod(string methodName)
+    {
+        return methodName.StartsWith("Get", StringComparison.OrdinalIgnoreCase) ||
+               methodName.StartsWith("Find", StringComparison.OrdinalIgnoreCase) ||
+               methodName.StartsWith("Query", StringComparison.OrdinalIgnoreCase) ||
+               methodName.StartsWith("List", StringComparison.OrdinalIgnoreCase) ||
+               methodName.StartsWith("Exists", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private UnitOfWorkAttribute? GetUnitOfWorkAttribute(IInvocation invocation)
+    {
+        var method = invocation.MethodInvocationTarget ?? invocation.Method;
+        return method.GetCustomAttribute<UnitOfWorkAttribute>()
+               ?? method.DeclaringType?.GetCustomAttribute<UnitOfWorkAttribute>();
+    }
+
+    // 包装 async Task（无返回值）
+    private async Task HandleAsyncWithoutResult(Task task, string typeName, string methodName)
     {
         try
         {
             await task.ConfigureAwait(false);
-            await unitOfWork.CompleteAsync();
-
-            Console.WriteLine($"【拦截器】 提交的 DbContext ID：{unitOfWork.GetHashCode()}");
+            await _unitOfWork.CompleteAsync().ConfigureAwait(false);
+            _logger.LogDebug("工作单元提交成功：{TypeName}.{MethodName}", typeName, methodName);
         }
         catch
         {
+            await _unitOfWork.RollbackAsync().ConfigureAwait(false);
             throw;
         }
     }
 
-    private UnitOfWorkAttribute GetUnitOfWorkAttribute(IInvocation invocation)
+    // 包装 async Task<T>（有返回值）——实例方法，可访问 _unitOfWork
+    private async Task<T> HandleAsyncWithResult<T>(Task<T> task, string typeName, string methodName)
     {
-        _logger.LogDebug("=== 开始查找工作单元特性 ===");
-        _logger.LogDebug("方法: {MethodName}", invocation.Method.Name);
-        _logger.LogDebug("接口类型: {InterfaceType}", invocation.Method.DeclaringType?.Name);
-
-        // 先查方法上的特性
-        var methodAttr = invocation.Method.GetCustomAttribute<UnitOfWorkAttribute>();
-        if (methodAttr != null) return methodAttr;
-
-        // 方法上没有则查类上的特性
-        var classAttr = invocation.TargetType.GetCustomAttribute<UnitOfWorkAttribute>();
-        return classAttr;
-    }
-
-    // 从 Service 实例中反射获取 IUnitOfWorkManager（支持字段/属性,此方案是除了IServiceProviderAccessor接口以外的另一种方式）
-    private IUnitOfWorkManager? GetUnitOfWorkManagerFromService(object targetService)
-    {
-        var serviceType = targetService.GetType();
-
-        // 1. 先找私有字段（最常见：private readonly IUnitOfWorkManager _unitOfWorkManager;）
-        var field = serviceType.GetField(
-            "_unitOfWorkManager",
-            BindingFlags.Instance | BindingFlags.NonPublic);
-        if (field != null && field.FieldType == typeof(IUnitOfWorkManager))
+        try
         {
-            return field.GetValue(targetService) as IUnitOfWorkManager;
+            T result = await task.ConfigureAwait(false);
+            await _unitOfWork.CompleteAsync().ConfigureAwait(false);
+            _logger.LogDebug("工作单元提交成功：{TypeName}.{MethodName}", typeName, methodName);
+            return result;
         }
-
-        // 2. 再找公共字段（少见）
-        field = serviceType.GetField(
-            "_unitOfWorkManager",
-            BindingFlags.Instance | BindingFlags.Public);
-        if (field != null && field.FieldType == typeof(IUnitOfWorkManager))
+        catch
         {
-            return field.GetValue(targetService) as IUnitOfWorkManager;
+            await _unitOfWork.RollbackAsync().ConfigureAwait(false);
+            throw;
         }
-
-        // 3. 再找属性（比如：public IUnitOfWorkManager UnitOfWorkManager { get; }）
-        var property = serviceType.GetProperty(
-            "UnitOfWorkManager",
-            BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
-        if (property != null && property.PropertyType == typeof(IUnitOfWorkManager))
-        {
-            return property.GetValue(targetService) as IUnitOfWorkManager;
-        }
-
-        // 4. 若字段名不同（比如 _uowManager），可在这里扩展（添加其他可能的字段名）
-        var alternativeField = serviceType.GetField(
-            "_uowManager",
-            BindingFlags.Instance | BindingFlags.NonPublic);
-        if (alternativeField != null && alternativeField.FieldType == typeof(IUnitOfWorkManager))
-        {
-            return alternativeField.GetValue(targetService) as IUnitOfWorkManager;
-        }
-
-        return null;
     }
 }

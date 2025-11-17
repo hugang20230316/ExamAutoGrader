@@ -1,5 +1,5 @@
 ﻿using ExamAutoGrader.Domain.Enums;
-using ExamAutoGrader.Domain.ValueObjects;
+using ExamAutoGrader.Domain.Interfaces;
 using System.Text.Json;
 
 namespace ExamAutoGrader.Domain.Entities;
@@ -7,70 +7,72 @@ namespace ExamAutoGrader.Domain.Entities;
 /// <summary>
 /// 反馈记录
 /// </summary>
-public class FeedbackRecord : AggregateRoot<Guid>
+public class FeedbackRecord : AggregateRoot<Guid>, IEntity<Guid>, IAuditable, IAggregateRoot<Guid>
 {
-    public FeedbackRecord(Guid id) : base(id)
-    {
-    }
+    public FeedbackRecord(Guid id) : base(id) { }
 
     /// <summary>
     /// 题目ID
     /// </summary>
-    public Guid? QuestionId { get; set; }
+    public Guid? QuestionId { get; private set; }
 
     /// <summary>
     /// 科目
     /// </summary>
-    public string Subject { get; set; } = string.Empty;
+    public string Subject { get; private set; } = string.Empty;
 
     /// <summary>
     /// 题目类型
     /// </summary>
-    public EQuestionType? QuestionType { get; set; }
+    public EQuestionType? QuestionType { get; private set; }
 
     /// <summary>
     /// 题干
     /// </summary>
-    public string Stem { get; set; } = string.Empty;
+    public string Stem { get; private set; } = string.Empty;
 
     /// <summary>
     /// 标准答案
     /// 用于答案一致性验证
     /// </summary>
-    public string StandardAnswer { get; set; } = string.Empty;
+    public string StandardAnswer { get; private set; } = string.Empty;
 
     /// <summary>
     /// 学生答案
     /// </summary>
-    public string StudentAnswer { get; set; } = string.Empty;
+    public string StudentAnswer { get; private set; } = string.Empty;
+
+    /// <summary>
+    /// AI给分
+    /// </summary>
+    public float? OriginalScore { get; private set; }
+
+    /// <summary>
+    /// 题目总分
+    /// </summary>
+    public float? Score { get; private set; }
 
     /// <summary>
     /// 建议评分
     /// </summary>
-    public float? ExpectedScore { get; set; }
+    public float? ExpectedScore { get; private set; }
 
     /// <summary>
     /// 反馈说明
     /// </summary>
-    public string FeedbackReason { get; set; } = string.Empty;
+    public string FeedbackReason { get; private set; } = string.Empty;
 
     /// <summary>
-    /// 【离线生成】语义指纹（由大模型或规则生成）
+    /// 语义指纹（由大模型或规则生成）
     /// 示例: "math.derivative.polynomial.at_point"
     /// </summary>
-    public string SemanticFingerprint { get; set; } = string.Empty;
+    public string SemanticFingerprint { get; private set; } = string.Empty;
 
     /// <summary>
-    /// 【离线生成】知识点编码（对接知识库）
-    /// 示例: "MATH.CALC.DERIV.001"
-    /// </summary>
-    public string KnowledgePointCode { get; set; } = string.Empty;
-
-    /// <summary>
-    /// 【离线生成】题干的 Embedding 向量（JSON 格式存储）
+    /// 题干的 Embedding 向量（JSON 格式存储）
     /// 示例: "[0.12, -0.45, ..., 0.89]" (1536维)
     /// </summary>
-    public string EmbeddingVectorJson { get; set; } = string.Empty;
+    public string EmbeddingVectorJson { get; private set; } = string.Empty;
 
     /// <summary>
     /// 评分来源（历史反馈/新评分/AI评分）
@@ -92,18 +94,14 @@ public class FeedbackRecord : AggregateRoot<Guid>
     /// </summary>
     public DateTime GradedAt { get; private set; }
 
-    /// <summary>
-    /// 题目指纹
-    /// </summary>
-    public QuestionFingerprint QuestionFingerprint { get; set; } = new();
-
     // 工厂方法
     public static FeedbackRecord CreateFromFeedback(
         EQuestionType? questionType,
         string stem,
         string subject,
         string studentAnswer,
-        int expectedScore,
+        float? Score,
+        float? expectedScore,
         string feedbackComment)
     {
         var record = new FeedbackRecord(Guid.NewGuid())
@@ -111,6 +109,7 @@ public class FeedbackRecord : AggregateRoot<Guid>
             Stem = stem,
             Subject = subject,
             StudentAnswer = studentAnswer,
+            Score = Score,
             ExpectedScore = expectedScore,
             QuestionType = questionType
         };
@@ -131,23 +130,22 @@ public class FeedbackRecord : AggregateRoot<Guid>
         EQuestionType? questionType,
         string studentAnswer,
         float? score,
+        float? expectedScore,
         string comment,
         string currentFingerprint,
         float[] currentEmbedding)
     {
         return new FeedbackRecord(Guid.NewGuid())
-        {
-            QuestionFingerprint = new QuestionFingerprint(
-                questionId,
-                subject,
-                stem,
-                questionType),
+        { 
+            QuestionType = questionType,
+            QuestionId = questionId,
+            Stem = stem,
             StudentAnswer = studentAnswer,
-            ExpectedScore = score,
+            Score = score,
+            ExpectedScore = expectedScore,
             FeedbackReason = comment,
             GradingSource = "AutoGraded",
             IsAutoGraded = true,
-            AiConfidence = 0.8f,
             GradedAt = DateTime.UtcNow,
             SemanticFingerprint = currentFingerprint,
             EmbeddingVectorJson = JsonSerializer.Serialize(currentEmbedding),
@@ -155,7 +153,6 @@ public class FeedbackRecord : AggregateRoot<Guid>
             UpdatedAt = DateTime.UtcNow
         };
     }
-
 
     /// <summary>
     /// 
@@ -167,5 +164,18 @@ public class FeedbackRecord : AggregateRoot<Guid>
     {
         FeedbackReason = string.IsNullOrEmpty(feedbackComment) ? $"用户认为应该给{expectedScore}分"
             : $"用户提议当学生答题类似于：{studentAnswer}时，评分建议给:{expectedScore}分 ，原因：{feedbackComment}。";
+    }
+
+    protected IEnumerable<object> GetEqualityComponents()
+    {
+        yield return QuestionId ?? Guid.Empty;
+        yield return Subject;
+        yield return Stem;
+        yield return QuestionType ?? EQuestionType.Unknown;
+    }
+
+    public override string ToString()
+    {
+        return $"{Subject}-{QuestionType}-{Stem}";
     }
 }

@@ -35,16 +35,21 @@ public class FeedbackSubmissionDto
     public string StudentAnswer { get; set; } = string.Empty;
 
     /// <summary>
+    /// 题目总分
+    /// </summary>
+    public float? Score { get; set; }
+
+    /// <summary>
     /// AI给出的原始评分分数
     /// 示例：2 (用户认为此分数不合理)
     /// </summary>
-    public int OriginalScore { get; set; }
+    public float? OriginalScore { get; set; }
 
     /// <summary>
     /// 用户认为合理的期望分数
     /// 示例：4 (用户认为应该给4分)
     /// </summary>
-    public int ExpectedScore { get; set; }
+    public float? ExpectedScore { get; set; }
 
     /// <summary>
     /// 反馈说明

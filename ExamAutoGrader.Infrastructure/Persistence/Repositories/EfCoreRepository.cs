@@ -63,18 +63,3 @@ public class EfCoreRepository<TAggregate, TKey> : IRepository<TAggregate, TKey> 
         Logger.LogDebug("删除聚合根 {Type} ID: {Id}", typeof(TAggregate).Name, aggregate.Id);
     }
 }
-
-/// <summary>
-/// 便捷的 Guid 主键仓储
-/// </summary>
-/// <typeparam name="TAggregate">聚合根类型</typeparam>
-public class EfCoreRepository<TAggregate> : EfCoreRepository<TAggregate, Guid>
-    where TAggregate : class, IAggregateRoot<Guid>
-{
-    public EfCoreRepository(
-        ExamAutoGraderDbContext context,
-        ILogger<EfCoreRepository<TAggregate, Guid>> logger)
-        : base(context, logger)
-    {
-    }
-}

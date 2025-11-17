@@ -1,4 +1,4 @@
-﻿namespace ExamAutoGrader.Domain.Attributes;
+﻿namespace ExamAutoGrader.Application.Abstractions;
 
 /// <summary>
 /// 标记方法或类启用工作单元（事务）管理

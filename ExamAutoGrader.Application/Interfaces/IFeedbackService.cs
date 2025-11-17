@@ -4,7 +4,7 @@ using ExamAutoGrader.Domain.Enums;
 
 namespace ExamAutoGrader.Application.Interfaces
 {
-    public interface IKnowledgeBaseService
+    public interface IFeedbackService
     {
         /// <summary>
         /// 从用户反馈中学习
@@ -12,16 +12,14 @@ namespace ExamAutoGrader.Application.Interfaces
         Task SubmitFeedbackAsync(FeedbackSubmissionDto dto, CancellationToken ct = default);
 
         /// <summary>
-        /// 获取相关反馈记录（支持多层匹配）
+        /// 获取相关反馈记录
         /// </summary>
         Task<List<FeedbackRecord>> GetRelevantRecordsAsync(
             Guid? questionId,
             string stem,
             string studentAnswer,
             string subject,
-            EQuestionType? questionType,
-            string? currentFingerprint = null, // ✅ 当前题目的指纹
-            float[]? currentEmbedding = null); // ✅ 当前题目的向量
+            EQuestionType? questionType); 
 
 
         /// <summary>
@@ -37,14 +35,6 @@ namespace ExamAutoGrader.Application.Interfaces
         /// <summary>
         /// 记录新的评分结果（用于未来匹配）
         /// </summary>
-        Task RecordNewGradingAsync(GradingExamQuestionItemDto item, GradingItemResultDto result);
-
-        /// <summary>
-        /// 通过题干和课程获取指纹信息
-        /// </summary>
-        /// <param name="stem"></param>
-        /// <param name="subject"></param>
-        /// <returns></returns>
-        Task<FeedbackRecord> GetByStemAndSubjectAsync(string stem, string subject);
+        Task RecordNewGradingAsync(GradingWithAIItemDto item, GradingItemResultDto result);
     }
 }
