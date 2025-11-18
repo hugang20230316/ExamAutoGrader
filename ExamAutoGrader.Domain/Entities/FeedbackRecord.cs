@@ -100,7 +100,7 @@ public class FeedbackRecord : AggregateRoot<Guid>, IEntity<Guid>, IAuditable, IA
         string stem,
         string subject,
         string studentAnswer,
-        float? Score,
+        float? score,
         float? expectedScore,
         string feedbackComment)
     {
@@ -109,7 +109,7 @@ public class FeedbackRecord : AggregateRoot<Guid>, IEntity<Guid>, IAuditable, IA
             Stem = stem,
             Subject = subject,
             StudentAnswer = studentAnswer,
-            Score = Score,
+            Score = score,
             ExpectedScore = expectedScore,
             QuestionType = questionType
         };
